@@ -1,3 +1,7 @@
+# ============================================
+# CONFIGURATION - EDIT ONLY THIS SECTION
+# ============================================
+
 name: Create Filtered Branch
 
 # Run manually only
@@ -17,6 +21,10 @@ on:
         required: true
         default: 'BusinessCentral,Shopify'
 
+# ============================================
+# WORKFLOW CODE - DON'T EDIT BELOW
+# ============================================
+
 jobs:
   create-filtered-branch:
     runs-on: ubuntu-latest
@@ -28,7 +36,7 @@ jobs:
       with:
         ref: ${{ github.event.inputs.source_branch }}
         fetch-depth: 0
-        token: ${{ secrets.PAT_CLIENTREPO }}
+        token: ${{ secrets.GITHUB_TOKEN }}
 
     # Configure Git
     - name: Configure Git
@@ -75,6 +83,7 @@ jobs:
         kept_count=0
         
         # Remove files not in specified folders
+        echo "🗑️  Removing files not in specified folders..."
         for file in $all_files; do
             keep_file=false
             
@@ -95,7 +104,12 @@ jobs:
                 removed_count=$((removed_count + 1))
             fi
         done
-
+        
+        echo ""
+        echo "📊 Summary:"
+        echo "   • Files kept: $kept_count"
+        echo "   • Files removed: $removed_count"
+        echo ""
         echo "✅ Filtering complete!"
 
     # Show what's left
@@ -123,6 +137,3 @@ jobs:
       run: |
         echo "🚀 Pushing branch: ${{ github.event.inputs.new_branch }}"
         git push origin ${{ github.event.inputs.new_branch }} --force
-
-        echo ""
-
