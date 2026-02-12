@@ -14,16 +14,11 @@ on:
         description: 'Fabric Capacity ID to sync to'
         required: true
         type: string
-      REPOSITORY_NAME:
-        description: 'REPOSITORY_NAME'
-        required: true
-        type: string
       BRANCH_NAME:
         description: 'BRANCH_NAME'
         required: true
         type: string
         default: 'main'
-        
       WORKSPACE_NAME:
         description: 'WORKSPACE_NAME'
         required: true
@@ -71,7 +66,7 @@ jobs:
           CONNECTION_ID: ${{ secrets.CONNECTION_ID }}
           PAT_GITHUB: ${{ secrets.PAT_GITHUB }}
           GITHUB_OWNER: ${{ vars.OWNER_GITHUB }}
-          REPO_NAME: ${{ inputs.REPOSITORY_NAME }}
+          REPO_NAME: ${{ vars.REPOSITORY_NAME }}
           BRANCH_NAME: ${{ inputs.BRANCH_NAME }}
           CAPACITY_ID: ${{ inputs.CAPACITY_ID }}
           WORKSPACE_NAME: ${{ inputs.WORKSPACE_NAME }}
