@@ -28,7 +28,7 @@ jobs:
       with:
         ref: ${{ github.event.inputs.source_branch }}
         fetch-depth: 0
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.PAT_CLIENTREPO }}
 
     # Configure Git
     - name: Configure Git
