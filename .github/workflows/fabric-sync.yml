@@ -1,0 +1,81 @@
+name: Sync GitHub to Fabric Workspace
+
+# When to run this workflow
+on:
+  # Run automatically when you push to main branch
+  push:
+    branches:
+      - main
+  
+  # Allow manual trigger from GitHub UI
+  workflow_dispatch:
+    inputs:
+      CAPACITY_ID:
+        description: 'Fabric Capacity ID to sync to'
+        required: true
+        type: string
+      REPOSITORY_NAME:
+        description: 'REPOSITORY_NAME'
+        required: true
+        type: string
+      BRANCH_NAME:
+        description: 'BRANCH_NAME'
+        required: true
+        type: string
+        default: 'main'
+        
+      WORKSPACE_NAME:
+        description: 'WORKSPACE_NAME'
+        required: true
+        type: string
+      USERS:
+        description: 'USERS'
+        required: true
+        type: string
+      TARGET_TENANT_ID:
+        description: 'TARGET_TENANT_ID '
+        required: true
+        type: string
+
+# Environment variables available to all jobs
+env:
+  FABRIC_API_BASE: https://api.fabric.microsoft.com/v1
+
+jobs:
+  sync-to-fabric:
+    runs-on: ubuntu-latest
+    
+    steps:
+      # Step 1: Checkout your repository code
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      # Step 2: Set up Python
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      # Step 3: Install required Python packages
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests
+      
+      # Step 4: Run the sync script
+      - name: Sync to Fabric Workspace
+        env:
+          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          CONNECTION_ID: ${{ secrets.CONNECTION_ID }}
+          PAT_GITHUB: ${{ secrets.PAT_GITHUB }}
+          GITHUB_OWNER: ${{ vars.OWNER_GITHUB }}
+          REPO_NAME: ${{ inputs.REPOSITORY_NAME }}
+          BRANCH_NAME: ${{ inputs.BRANCH_NAME }}
+          CAPACITY_ID: ${{ inputs.CAPACITY_ID }}
+          WORKSPACE_NAME: ${{ inputs.WORKSPACE_NAME }}
+          ADMIN_USERS: ${{ inputs.USERS }}
+          TARGET_TENANT_ID: ${{ inputs.TARGET_TENANT_ID }}
+        run: |
+          python .github/scripts/sync_fabric.py
