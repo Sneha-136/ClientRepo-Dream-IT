@@ -1,0 +1,184 @@
+name: One-Time Connection Setuptest
+   
+on:
+  workflow_dispatch:
+    inputs:
+      REPOSITORY_NAME:
+        description: 'REPOSITORY_NAME'
+        required: true
+        default: 'main'
+
+jobs:
+  create-connection:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install Dependencies
+        run: pip install requests
+      
+      - name: Create Fabric Connection
+        env:
+          TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          GITHUB_PAT: ${{ secrets.PAT_GITHUB }}
+          GITHUB_OWNER: ${{ vars.OWNER_GITHUB }}
+          REPO_NAME: ${{ inputs.REPOSITORY_NAME }}
+        run: |
+          python - <<EOF
+          import os
+          import requests
+          import json
+          import sys
+          
+          TENANT_ID = os.environ['TENANT_ID']
+          CLIENT_ID = os.environ['CLIENT_ID']
+          CLIENT_SECRET = os.environ['CLIENT_SECRET']
+          GITHUB_PAT = os.environ['GITHUB_PAT']
+          GITHUB_OWNER = os.environ['GITHUB_OWNER']
+          REPO_NAME = os.environ['REPO_NAME']
+          
+          # Get Access Token
+          print("=== Requesting Azure AD Token ===")
+          token_url = f"https://login.microsoftonline.com/{TENANT_ID}/oauth2/v2.0/token"
+          token_data = {
+              "client_id": CLIENT_ID,
+              "client_secret": CLIENT_SECRET,
+              "scope": "https://api.fabric.microsoft.com/.default",
+              "grant_type": "client_credentials"
+          }
+          
+          try:
+              token_response = requests.post(token_url, data=token_data)
+              token_response.raise_for_status()
+              access_token = token_response.json()["access_token"]
+              print("✓ Successfully obtained access token")
+          except requests.exceptions.HTTPError as e:
+              print(f"✗ Failed to get access token: {e}")
+              print(f"Response: {token_response.text}")
+              sys.exit(1)
+          except KeyError:
+              print(f"✗ Token response missing 'access_token': {token_response.text}")
+              sys.exit(1)
+          
+          headers = {
+              "Authorization": f"Bearer {access_token}",
+              "Content-Type": "application/json"
+          }
+          
+          connection_name = f"GitHub-{GITHUB_OWNER}-{REPO_NAME}"
+          repo_url = f"https://github.com/{GITHUB_OWNER}/{REPO_NAME}"
+          
+          # Check for existing connections
+          print("\n=== Checking for Existing Connections ===")
+          list_url = "https://api.fabric.microsoft.com/v1/connections"
+          
+          try:
+              list_response = requests.get(list_url, headers=headers)
+              list_response.raise_for_status()
+              connections = list_response.json().get("value", [])
+              
+              # Look for existing connection with same name or URL
+              existing_connection = None
+              for conn in connections:
+                  if conn.get("displayName") == connection_name:
+                      existing_connection = conn
+                      print(f"✓ Found existing connection by name: {connection_name}")
+                      break
+                  # Also check by URL in connection details
+                  conn_details = conn.get("connectionDetails", {})
+                  params = conn_details.get("parameters", [])
+                  for param in params:
+                      if param.get("name") == "url" and param.get("value") == repo_url:
+                          existing_connection = conn
+                          print(f"✓ Found existing connection by URL: {repo_url}")
+                          break
+                  if existing_connection:
+                      break
+              
+              if existing_connection:
+                  connection_id = existing_connection.get("id")
+                  print(f"\n{'='*60}")
+                  print(f"CONNECTION ALREADY EXISTS")
+                  print(f"Connection ID: {connection_id}")
+                  print(f"Connection Name: {existing_connection.get('displayName')}")
+                  print(f"{'='*60}")
+                  sys.exit(0)
+              else:
+                  print("✓ No existing connection found, proceeding to create new one")
+                  
+          except requests.exceptions.HTTPError as e:
+              print(f"⚠ Warning: Could not list connections: {e}")
+              print("Proceeding to create connection anyway...")
+          except Exception as e:
+              print(f"⚠ Warning: Error checking existing connections: {e}")
+              print("Proceeding to create connection anyway...")
+          
+          # Create GitHub Connection
+          print("\n=== Creating Fabric Connection ===")
+          connection_url = "https://api.fabric.microsoft.com/v1/connections"
+          connection_body = {
+              "connectivityType": "ShareableCloud",
+              "displayName": connection_name,
+              "connectionDetails": {
+                  "type": "GitHubSourceControl",
+                  "creationMethod": "GitHubSourceControl.Contents",
+                  "parameters": [
+                      {
+                          "dataType": "Text",
+                          "name": "url",
+                          "value": repo_url
+                      }
+                  ]
+              },
+              "credentialDetails": {
+                  "credentials": {
+                      "credentialType": "Key",
+                      "key": GITHUB_PAT
+                  }
+              }
+          }
+          
+          print(f"Request URL: {connection_url}")
+          print(f"Connection Name: {connection_name}")
+          print(f"Repository: {repo_url}")
+          
+          try:
+              response = requests.post(connection_url, headers=headers, json=connection_body)
+              
+              print(f"\nResponse Status: {response.status_code}")
+              print(f"Response Body: {response.text}")
+              
+              response.raise_for_status()
+              connection_data = response.json()
+              
+              if 'id' in connection_data:
+                  print(f"\n✓ Connection created successfully!")
+                  print(f"Connection ID: {connection_data['id']}")
+                  print(f"\n{'='*60}")
+                  print(f"SAVE THIS CONNECTION ID: {connection_data['id']}")
+                  print(f"{'='*60}")
+              else:
+                  print(f"\n✗ Connection response missing 'id' field")
+                  print(f"Full response: {json.dumps(connection_data, indent=2)}")
+                  sys.exit(1)
+                  
+          except requests.exceptions.HTTPError as e:
+              print(f"\n✗ Failed to create connection: {e}")
+              print(f"Status Code: {response.status_code}")
+              print(f"Response: {response.text}")
+              sys.exit(1)
+          except json.JSONDecodeError:
+              print(f"\n✗ Failed to parse JSON response")
+              print(f"Raw response: {response.text}")
+              sys.exit(1)
+          
+          EOF
