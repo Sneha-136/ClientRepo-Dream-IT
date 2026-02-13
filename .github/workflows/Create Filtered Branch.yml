@@ -20,6 +20,14 @@ on:
         description: 'Comma-separated list of folders to keep (e.g., BusinessCentral,Shopify)'
         required: true
         default: 'BusinessCentral,Shopify'
+      push_to_main:
+        description: 'Push commits to main branch? (true/false)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 # ============================================
 # WORKFLOW CODE - DON'T EDIT BELOW
@@ -101,10 +109,18 @@ jobs:
             done
             
             # Remove file from new branch if not in keep list
+            # This removes EVERYTHING else including .github/workflows, README, etc.
             if [ "$keep_file" = false ]; then
-                git rm "$file" 2>/dev/null || true
+                git rm -f "$file" 2>/dev/null || true
             fi
         done
+        
+        # Explicitly remove .github folder if it exists
+        if [ -d ".github" ]; then
+            echo ""
+            echo "🗑️  Removing .github folder (workflows, etc.)..."
+            git rm -rf .github 2>/dev/null || true
+        fi
         
         echo ""
         echo "📊 Summary:"
@@ -133,7 +149,12 @@ jobs:
         fi
 
     # Push branch
-    - name: Push new branch
+    - name: Push new filtered branch only
       run: |
-        echo "🚀 Pushing branch: ${{ github.event.inputs.new_branch }}"
+        echo "🚀 Pushing ONLY the filtered branch: ${{ github.event.inputs.new_branch }}"
+        echo "ℹ️  Main branch will NOT be modified or pushed"
         git push origin ${{ github.event.inputs.new_branch }} --force
+        echo ""
+        echo "✅ Successfully created filtered branch!"
+        echo "📋 Branch name: ${{ github.event.inputs.new_branch }}"
+        echo "📁 Contains only: ${{ github.event.inputs.folders_to_keep }}"
