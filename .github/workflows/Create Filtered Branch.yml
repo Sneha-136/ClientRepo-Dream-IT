@@ -1,7 +1,3 @@
-# ============================================
-# CONFIGURATION - EDIT ONLY THIS SECTION
-# ============================================
-
 name: Create Filtered Branch
 
 # Run manually only
@@ -20,10 +16,6 @@ on:
         description: 'Comma-separated EXACT folder names (e.g., BusinessCentral,Shopify) - must match exactly'
         required: true
         default: 'BusinessCentral,Shopify'
-
-# ============================================
-# WORKFLOW CODE - DON'T EDIT BELOW
-# ============================================
 
 jobs:
   create-filtered-branch:
@@ -58,7 +50,6 @@ jobs:
         echo "============================================"
         echo ""
         echo "✅ Folders to include in new branch: ${{ github.event.inputs.folders_to_keep }}"
-        echo "ℹ️  Note: Main branch will NOT be modified - only the new branch"
         echo ""
         
         # Convert comma-separated list to array
@@ -111,7 +102,6 @@ jobs:
         
         # Remove all directories that are not in our keep list
         echo ""
-        echo "🗑️  Removing non-matching folders..."
         for dir in */; do
             dir=${dir%/}  # Remove trailing slash
             keep_dir=false
@@ -126,7 +116,6 @@ jobs:
             done
             
             if [ "$keep_dir" = false ]; then
-                echo "   🗑️  Removing: $dir/"
                 git rm -rf "$dir" 2>/dev/null || true
             fi
         done
@@ -134,7 +123,6 @@ jobs:
         # Explicitly remove .github folder if it exists
         if [ -d ".github" ]; then
             echo ""
-            echo "🗑️  Removing .github folder (workflows, etc.)..."
             git rm -rf .github 2>/dev/null || true
         fi
         
@@ -143,15 +131,6 @@ jobs:
         echo "   • Total files in new branch: $kept_count"
         echo ""
         echo "✅ Branch filtering complete!"
-
-    # Show what's left
-    - name: Show remaining structure
-      run: |
-        echo ""
-        echo "📂 Remaining folder structure:"
-        echo "============================================"
-        ls -laR
-        echo ""
 
     # Commit changes
     - name: Commit changes
