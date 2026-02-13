@@ -2,7 +2,7 @@
 # CONFIGURATION - EDIT ONLY THIS SECTION
 # ============================================
 
-name: Create Isolated Filtered Branch
+name: Create Truly Isolated Filtered Branch
 
 # Run manually only
 on:
@@ -30,175 +30,290 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    # Step 1: Checkout repository with minimal history
-    # Why: We don't need full history since we're creating a completely new isolated branch
-    - name: Checkout source code
+    # STEP 1: Checkout with FULL history
+    # FIX: Changed fetch-depth from 1 to 0 to get all commits
+    # WHY: We need access to source branch commits to copy folders
+    - name: Checkout source code with full history
       uses: actions/checkout@v3
       with:
         ref: ${{ github.event.inputs.source_branch }}
-        fetch-depth: 1  # Only get latest commit, not full history
+        fetch-depth: 0  # FIX #1: Get ALL history, not just latest commit
         token: ${{ secrets.PAT_GITHUB }}
 
-    # Step 2: Configure Git identity
-    # Why: Required for making commits
+    # STEP 2: Fetch all remote branches explicitly
+    # FIX: Ensure we have all remote branches available
+    # WHY: Orphan branch might lose track of remote branches
+    - name: Fetch all branches
+      run: |
+        echo "📡 Fetching all remote branches..."
+        git fetch --all
+        echo "✅ All branches fetched"
+        echo ""
+        echo "Available branches:"
+        git branch -a
+
+    # STEP 3: Configure Git identity
     - name: Configure Git
       run: |
         git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
 
-    # Step 3: Create ORPHAN branch (completely disconnected from main)
-    # Why: Orphan branches have NO shared history with main, making merge impossible
+    # STEP 4: Delete remote branch if it exists
+    # FIX: Prevent conflicts with existing branch
+    # WHY: If branch exists with history, orphan might fail
+    - name: Delete existing remote branch (if any)
+      continue-on-error: true
+      run: |
+        echo "🗑️  Checking if branch exists remotely..."
+        if git ls-remote --heads origin ${{ github.event.inputs.new_branch }} | grep -q ${{ github.event.inputs.new_branch }}; then
+          echo "Branch exists, deleting..."
+          git push origin --delete ${{ github.event.inputs.new_branch }} || echo "Could not delete remote branch"
+        else
+          echo "Branch does not exist remotely, continuing..."
+        fi
+
+    # STEP 5: Show available folders in source branch
+    # FIX: List actual folder names for debugging
+    # WHY: Help identify case sensitivity or name issues
+    - name: List available folders in source branch
+      run: |
+        echo "============================================"
+        echo "📂 Folders available in ${{ github.event.inputs.source_branch }}:"
+        echo "============================================"
+        git ls-tree -d --name-only origin/${{ github.event.inputs.source_branch }} | while read folder; do
+          echo "   • $folder"
+        done
+        echo ""
+
+    # STEP 6: Store source branch SHA
+    # FIX: Use explicit commit SHA instead of branch name
+    # WHY: More reliable reference that won't change
+    - name: Get source branch SHA
+      id: source_sha
+      run: |
+        SHA=$(git rev-parse origin/${{ github.event.inputs.source_branch }})
+        echo "Source SHA: $SHA"
+        echo "sha=$SHA" >> $GITHUB_OUTPUT
+
+    # STEP 7: Create ORPHAN branch (completely disconnected)
     - name: Create orphan branch (isolated from main)
       run: |
         echo "============================================"
-        echo "🌿 Creating ISOLATED branch"
+        echo "🌿 Creating ORPHAN branch"
         echo "============================================"
-        echo ""
-        echo "Creating orphan branch: ${{ github.event.inputs.new_branch }}"
-        echo "This branch will have NO connection to ${{ github.event.inputs.source_branch }}"
-        echo "Pull requests will be automatically impossible due to no shared history"
+        echo "Branch name: ${{ github.event.inputs.new_branch }}"
+        echo "Source: ${{ github.event.inputs.source_branch }}"
+        echo "Source SHA: ${{ steps.source_sha.outputs.sha }}"
         echo ""
         
-        # Create orphan branch - this has NO parent commits from any branch
+        # Create orphan branch - NO parent commits
         git checkout --orphan ${{ github.event.inputs.new_branch }}
+        
+        echo "✅ Orphan branch created"
+        echo "Current branch: $(git branch --show-current)"
 
-    # Step 4: Remove ALL files from staging
-    # Why: Orphan branch starts with all files staged, we need clean slate
-    - name: Clear all files from staging
+    # STEP 8: Remove ALL files from staging and working directory
+    # FIX: Use more aggressive cleanup
+    # WHY: Orphan branches start with all files staged
+    - name: Clear all files completely
       run: |
-        echo "🗑️  Removing all files from staging area..."
-        git rm -rf . 2>/dev/null || true
-        echo "✅ Staging area cleared"
+        echo "🗑️  Removing all files..."
+        
+        # Remove from git staging
+        git rm -rf . --quiet 2>/dev/null || true
+        
+        # Remove from working directory (except .git)
+        find . -not -path './.git/*' -not -name '.git' -delete 2>/dev/null || true
+        
+        echo "✅ All files removed"
+        ls -la
 
-    # Step 5: Re-checkout ONLY the specified folders from source branch
-    # Why: We only want specific folders, nothing else
-    - name: Copy only specified folders from source
+    # STEP 9: Copy ONLY specified folders using SHA reference
+    # FIX: Use SHA instead of branch name, strip trailing slashes
+    # WHY: More reliable, handles all edge cases
+    - name: Copy only specified folders
       run: |
         echo "============================================"
-        echo "📂 Copying EXACT folders from source branch"
+        echo "📂 Copying folders from source"
         echo "============================================"
         echo ""
         
         # Convert comma-separated list to array
         IFS=',' read -ra FOLDERS <<< "${{ github.event.inputs.folders_to_keep }}"
         
-        # Validate and copy each folder
-        echo "📁 Folders to copy:"
+        # Process each folder
+        copied_count=0
+        failed_count=0
+        
         for folder in "${FOLDERS[@]}"; do
-            folder=$(echo "$folder" | xargs)  # Trim whitespace
+            # FIX #5: Strip whitespace AND trailing slashes
+            folder=$(echo "$folder" | xargs | sed 's:/*$::')
             
-            # Check if folder exists in source branch
-            if git ls-tree -r ${{ github.event.inputs.source_branch }} --name-only | grep -q "^${folder}/"; then
-                echo "   ✓ Copying: $folder/"
+            echo "Processing: $folder"
+            
+            # FIX #2: Use SHA reference instead of branch name
+            # Check if folder exists using SHA
+            if git ls-tree -d ${{ steps.source_sha.outputs.sha }} "$folder" &>/dev/null; then
+                echo "   ✓ Found: $folder/"
                 
-                # Checkout this specific folder from source branch
-                git checkout ${{ github.event.inputs.source_branch }} -- "$folder/" 2>/dev/null || {
-                    echo "   ⚠️  Warning: Could not copy $folder/"
-                }
+                # FIX #3: Use git show and tar to copy (works on orphan branches)
+                echo "   ↓ Copying files..."
+                
+                # Create folder structure
+                mkdir -p "$folder"
+                
+                # Extract files using git archive (most reliable method)
+                git archive ${{ steps.source_sha.outputs.sha }} "$folder" | tar -x
+                
+                if [ $? -eq 0 ]; then
+                    echo "   ✅ Copied successfully"
+                    copied_count=$((copied_count + 1))
+                else
+                    echo "   ❌ Copy failed"
+                    failed_count=$((failed_count + 1))
+                fi
             else
-                echo "   ✗ NOT FOUND: $folder/ (skipping)"
+                echo "   ✗ NOT FOUND: $folder/ (case-sensitive check failed)"
+                failed_count=$((failed_count + 1))
+                
+                # Try case-insensitive search
+                echo "   🔍 Searching case-insensitively..."
+                git ls-tree -d --name-only ${{ steps.source_sha.outputs.sha }} | grep -i "^${folder}$" | while read found_folder; do
+                    echo "   💡 Did you mean: $found_folder ?"
+                done
             fi
+            echo ""
         done
+        
+        echo "📊 Copy Summary:"
+        echo "   • Successfully copied: $copied_count"
+        echo "   • Failed/Not found: $failed_count"
         echo ""
-        echo "✅ Folder copy complete"
 
-    # Step 6: Verify what we have
-    # Why: Show user exactly what's in the new branch
+    # STEP 10: Verify copied files
     - name: Show copied structure
       run: |
-        echo ""
+        echo "============================================"
         echo "📂 Files in new isolated branch:"
         echo "============================================"
-        if [ -z "$(ls -A)" ]; then
-            echo "⚠️  WARNING: No files copied! Check folder names."
+        
+        if [ -z "$(find . -type f -not -path './.git/*' 2>/dev/null)" ]; then
+            echo "❌ ERROR: No files were copied!"
+            echo ""
+            echo "Troubleshooting:"
+            echo "1. Check folder names are EXACT (case-sensitive)"
+            echo "2. Check folders exist in source branch"
+            echo "3. Review logs above for specific errors"
+            exit 1
         else
-            # Show tree structure
+            echo "Files copied:"
             find . -type f -not -path './.git/*' | sort | while read file; do
                 echo "   ✓ $file"
             done
+            
+            echo ""
+            echo "📊 Summary:"
+            file_count=$(find . -type f -not -path './.git/*' | wc -l)
+            folder_count=$(find . -mindepth 1 -maxdepth 1 -type d -not -name '.git' | wc -l)
+            echo "   • Total files: $file_count"
+            echo "   • Total folders: $folder_count"
         fi
         echo ""
-        echo "📊 Summary:"
-        file_count=$(find . -type f -not -path './.git/*' | wc -l)
-        echo "   • Total files: $file_count"
-        echo ""
 
-    # Step 7: Create initial commit on orphan branch
-    # Why: Orphan branch needs at least one commit to exist
+    # STEP 11: Stage all copied files
+    # FIX: Use git add -A to catch everything
+    # WHY: More comprehensive than git add .
+    - name: Stage all files
+      run: |
+        echo "📝 Staging all files..."
+        
+        # FIX #7: Use -A flag to add all changes
+        git add -A
+        
+        echo "✅ Files staged"
+        git status
+
+    # STEP 12: Create initial commit
     - name: Create initial isolated commit
       run: |
-        echo "💾 Creating initial commit on isolated branch..."
-        echo ""
+        echo "💾 Creating initial commit..."
         
-        # Add all files
-        git add .
-        
-        # Check if there are files to commit
+        # Verify we have something to commit
         if git diff --cached --quiet; then
-            echo "❌ ERROR: No files to commit!"
-            echo "Check that folder names match exactly (case-sensitive)"
+            echo "❌ ERROR: Nothing to commit!"
+            exit 1
+        fi
+        
+        # Create commit
+        TIMESTAMP=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+        git commit -m "Initial isolated commit | Folders: ${{ github.event.inputs.folders_to_keep }} | Source: ${{ github.event.inputs.source_branch }} @ ${{ steps.source_sha.outputs.sha }} | Type: ORPHAN | Time: $TIMESTAMP"
+        
+        echo "✅ Initial commit created"
+        
+        # Show commit info
+        echo ""
+        echo "Commit details:"
+        git log --oneline -1
+
+    # STEP 13: Verify orphan status
+    - name: Verify branch is truly orphan
+      run: |
+        echo "🔍 Verifying orphan status..."
+        
+        # Check if branch has parent
+        if git rev-parse HEAD^ &>/dev/null; then
+            echo "❌ WARNING: Branch has parent commits (NOT ORPHAN!)"
+            git log --oneline --graph --all
             exit 1
         else
-            # Create commit with clear message
-            git commit -m "Initial commit: Filtered branch - Folders: ${{ github.event.inputs.folders_to_keep }} | Source: ${{ github.event.inputs.source_branch }} | Type: ORPHAN (isolated) | Created: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
-            
-            echo "✅ Initial commit created"
+            echo "✅ Confirmed: Branch is ORPHAN (no parent commits)"
         fi
+        
+        # Show commit count
+        commit_count=$(git rev-list --count HEAD)
+        echo "Total commits in branch: $commit_count (should be 1)"
 
-    # Step 8: Push the isolated branch (Make branch available in remote repository)
+    # STEP 14: Push the isolated branch
     - name: Push isolated branch to remote
       run: |
         echo "============================================"
-        echo "🚀 Pushing isolated branch to remote"
+        echo "🚀 Pushing ORPHAN branch to remote"
         echo "============================================"
         echo ""
         
-        # Force push to create/overwrite the branch
+        # FIX #8: Force push to overwrite any existing branch
         git push origin ${{ github.event.inputs.new_branch }} --force
         
         echo ""
-        echo "✅ SUCCESS!"
-        echo "============================================"
-        echo "📋 Branch Details:"
-        echo "   • Name: ${{ github.event.inputs.new_branch }}"
-        echo "   • Type: Orphan (isolated from all other branches)"
-        echo "   • Contains: ${{ github.event.inputs.folders_to_keep }}"
-        echo "   • Source: ${{ github.event.inputs.source_branch }}"
-        echo ""
-        echo "🔒 Branch Protection:"
-        echo "   • No shared history with main"
-        echo "   • Cannot create pull requests to main"
-        echo "   • Completely isolated branch"
-        echo ""
-        echo "⚠️  IMPORTANT:"
-        echo "   This branch is ISOLATED and cannot be merged back to main"
-        echo "   It exists as a separate line of development"
-        echo "============================================"
+        echo "✅ SUCCESS! Branch pushed"
 
-    # Step 9: Create branch protection rule via GitHub API (optional but recommended)
-    # Why: Extra safety to prevent accidental merges
-    - name: Add branch protection (prevent merges to main)
-      continue-on-error: true  # Don't fail workflow if this step fails
+    # STEP 15: Verify remote branch is orphan
+    - name: Verify remote branch isolation
       run: |
+        echo "============================================"
+        echo "🔍 Final Verification"
+        echo "============================================"
         echo ""
-        echo "🔒 Attempting to add branch protection..."
         
-        # Note: This requires PAT with repo permissions
-        # You can also set this manually in GitHub Settings > Branches
+        # Fetch the branch we just pushed
+        git fetch origin ${{ github.event.inputs.new_branch }}
         
-        curl -X PUT \
-          -H "Authorization: token ${{ secrets.PAT_GITHUB }}" \
-          -H "Accept: application/vnd.github.v3+json" \
-          "https://api.github.com/repos/${{ github.repository }}/branches/${{ github.event.inputs.new_branch }}/protection" \
-          -d '{
-            "required_status_checks": null,
-            "enforce_admins": false,
-            "required_pull_request_reviews": null,
-            "restrictions": null,
-            "allow_force_pushes": true,
-            "allow_deletions": false
-          }' 2>/dev/null || echo "ℹ️  Could not set branch protection via API (this is optional)"
+        # Check if it shares history with source
+        if git merge-base origin/${{ github.event.inputs.source_branch }} origin/${{ github.event.inputs.new_branch }} &>/dev/null; then
+            echo "❌ ERROR: Branches share common history!"
+            echo "This means orphan creation failed"
+            exit 1
+        else
+            echo "✅ VERIFIED: No common ancestor found"
+            echo "✅ Branch is truly isolated"
+        fi
         
         echo ""
-        echo "ℹ️  For additional protection, manually configure in:"
-        echo "   Settings > Branches > Branch protection rules"
+        echo "============================================"
+        echo "✅ SUCCESS - ISOLATED BRANCH CREATED"
+        echo "============================================"
+        echo "📋 Branch: ${{ github.event.inputs.new_branch }}"
+        echo "🔒 Type: Orphan (no shared history)"
+        echo "📁 Contains: ${{ github.event.inputs.folders_to_keep }}"
+        echo "🚫 Pull requests to ${{ github.event.inputs.source_branch }}: IMPOSSIBLE"
+        echo "============================================"
