@@ -17,17 +17,9 @@ on:
         required: true
         default: 'filtered-branch'
       folders_to_keep:
-        description: 'Comma-separated list of folders to keep (e.g., BusinessCentral,Shopify)'
+        description: 'Comma-separated EXACT folder names (e.g., BusinessCentral,Shopify) - must match exactly'
         required: true
         default: 'BusinessCentral,Shopify'
-      push_to_main:
-        description: 'Push commits to main branch? (true/false)'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'false'
-          - 'true'
 
 # ============================================
 # WORKFLOW CODE - DON'T EDIT BELOW
@@ -99,8 +91,10 @@ jobs:
             # Check if file is in one of our folders to keep
             for folder in "${FOLDERS[@]}"; do
                 folder=$(echo "$folder" | xargs)
-                # Check if file is INSIDE the folder (must start with folder/ not just folder)
-                if [[ $file == "$folder/"* ]]; then
+                
+                # EXACT MATCH ONLY: File must be folder/something or folder/path/something
+                # This prevents "Shopify" from matching "config_shopify" or "br_to_sil_shopify"
+                if [[ $file =~ ^${folder}/.*$ ]]; then
                     keep_file=true
                     kept_count=$((kept_count + 1))
                     echo "   ✓ $file"
@@ -112,6 +106,28 @@ jobs:
             # This removes EVERYTHING else including .github/workflows, README, etc.
             if [ "$keep_file" = false ]; then
                 git rm -f "$file" 2>/dev/null || true
+            fi
+        done
+        
+        # Remove all directories that are not in our keep list
+        echo ""
+        echo "🗑️  Removing non-matching folders..."
+        for dir in */; do
+            dir=${dir%/}  # Remove trailing slash
+            keep_dir=false
+            
+            for folder in "${FOLDERS[@]}"; do
+                folder=$(echo "$folder" | xargs)
+                # EXACT directory name match
+                if [ "$dir" = "$folder" ]; then
+                    keep_dir=true
+                    break
+                fi
+            done
+            
+            if [ "$keep_dir" = false ]; then
+                echo "   🗑️  Removing: $dir/"
+                git rm -rf "$dir" 2>/dev/null || true
             fi
         done
         
