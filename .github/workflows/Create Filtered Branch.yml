@@ -2,7 +2,7 @@
 # CONFIGURATION - EDIT ONLY THIS SECTION
 # ============================================
 
-name: Create Filtered Branch
+name: Create Isolated Filtered Branch
 
 # Run manually only
 on:
@@ -17,7 +17,7 @@ on:
         required: true
         default: 'filtered-branch'
       folders_to_keep:
-        description: 'Comma-separated EXACT folder names (e.g., BusinessCentral,Shopify) - must match exactly'
+        description: 'Comma-separated EXACT folder names (e.g., BusinessCentral,Shopify)'
         required: true
         default: 'BusinessCentral,Shopify'
 
@@ -26,151 +26,179 @@ on:
 # ============================================
 
 jobs:
-  create-filtered-branch:
+  create-isolated-filtered-branch:
     runs-on: ubuntu-latest
     
     steps:
-    # Checkout repository
-    - name: Checkout code
+    # Step 1: Checkout repository with minimal history
+    # Why: We don't need full history since we're creating a completely new isolated branch
+    - name: Checkout source code
       uses: actions/checkout@v3
       with:
         ref: ${{ github.event.inputs.source_branch }}
-        fetch-depth: 0
+        fetch-depth: 1  # Only get latest commit, not full history
         token: ${{ secrets.PAT_GITHUB }}
 
-    # Configure Git
+    # Step 2: Configure Git identity
+    # Why: Required for making commits
     - name: Configure Git
       run: |
         git config user.name "GitHub Actions Bot"
         git config user.email "actions@github.com"
 
-    # Create new branch
-    - name: Create new branch
-      run: |
-        echo "🌿 Creating branch: ${{ github.event.inputs.new_branch }}"
-        git checkout -b ${{ github.event.inputs.new_branch }}
-
-    # Filter folders - Keep only specified folders
-    - name: Filter folders
+    # Step 3: Create ORPHAN branch (completely disconnected from main)
+    # Why: Orphan branches have NO shared history with main, making merge impossible
+    - name: Create orphan branch (isolated from main)
       run: |
         echo "============================================"
-        echo "📂 Creating Filtered Branch"
+        echo "🌿 Creating ISOLATED branch"
         echo "============================================"
         echo ""
-        echo "✅ Folders to include in new branch: ${{ github.event.inputs.folders_to_keep }}"
-        echo "ℹ️  Note: Main branch will NOT be modified - only the new branch"
+        echo "Creating orphan branch: ${{ github.event.inputs.new_branch }}"
+        echo "This branch will have NO connection to ${{ github.event.inputs.source_branch }}"
+        echo "Pull requests will be automatically impossible due to no shared history"
+        echo ""
+        
+        # Create orphan branch - this has NO parent commits from any branch
+        git checkout --orphan ${{ github.event.inputs.new_branch }}
+
+    # Step 4: Remove ALL files from staging
+    # Why: Orphan branch starts with all files staged, we need clean slate
+    - name: Clear all files from staging
+      run: |
+        echo "🗑️  Removing all files from staging area..."
+        git rm -rf . 2>/dev/null || true
+        echo "✅ Staging area cleared"
+
+    # Step 5: Re-checkout ONLY the specified folders from source branch
+    # Why: We only want specific folders, nothing else
+    - name: Copy only specified folders from source
+      run: |
+        echo "============================================"
+        echo "📂 Copying EXACT folders from source branch"
+        echo "============================================"
         echo ""
         
         # Convert comma-separated list to array
         IFS=',' read -ra FOLDERS <<< "${{ github.event.inputs.folders_to_keep }}"
         
-        # Display folders that will be included
-        echo "📁 Checking specified folders:"
+        # Validate and copy each folder
+        echo "📁 Folders to copy:"
         for folder in "${FOLDERS[@]}"; do
-            folder=$(echo "$folder" | xargs)
-            if [ -d "$folder" ]; then
-                echo "   ✓ $folder/ (found)"
-            else
-                echo "   ✗ $folder/ (NOT FOUND - check spelling!)"
-            fi
-        done
-        echo ""
-        
-        # Get all files in repository
-        all_files=$(git ls-files)
-        
-        # Counter for kept files
-        kept_count=0
-        
-        # List files that will be kept
-        echo "📄 Files being added to new branch:"
-        echo ""
-        for file in $all_files; do
-            keep_file=false
+            folder=$(echo "$folder" | xargs)  # Trim whitespace
             
-            # Check if file is in one of our folders to keep
-            for folder in "${FOLDERS[@]}"; do
-                folder=$(echo "$folder" | xargs)
+            # Check if folder exists in source branch
+            if git ls-tree -r ${{ github.event.inputs.source_branch }} --name-only | grep -q "^${folder}/"; then
+                echo "   ✓ Copying: $folder/"
                 
-                # EXACT MATCH ONLY: File must be folder/something or folder/path/something
-                # This prevents "Shopify" from matching "config_shopify" or "br_to_sil_shopify"
-                if [[ $file =~ ^${folder}/.*$ ]]; then
-                    keep_file=true
-                    kept_count=$((kept_count + 1))
-                    echo "   ✓ $file"
-                    break
-                fi
-            done
-            
-            # Remove file from new branch if not in keep list
-            # This removes EVERYTHING else including .github/workflows, README, etc.
-            if [ "$keep_file" = false ]; then
-                git rm -f "$file" 2>/dev/null || true
+                # Checkout this specific folder from source branch
+                git checkout ${{ github.event.inputs.source_branch }} -- "$folder/" 2>/dev/null || {
+                    echo "   ⚠️  Warning: Could not copy $folder/"
+                }
+            else
+                echo "   ✗ NOT FOUND: $folder/ (skipping)"
             fi
         done
-        
-        # Remove all directories that are not in our keep list
         echo ""
-        echo "🗑️  Removing non-matching folders..."
-        for dir in */; do
-            dir=${dir%/}  # Remove trailing slash
-            keep_dir=false
-            
-            for folder in "${FOLDERS[@]}"; do
-                folder=$(echo "$folder" | xargs)
-                # EXACT directory name match
-                if [ "$dir" = "$folder" ]; then
-                    keep_dir=true
-                    break
-                fi
+        echo "✅ Folder copy complete"
+
+    # Step 6: Verify what we have
+    # Why: Show user exactly what's in the new branch
+    - name: Show copied structure
+      run: |
+        echo ""
+        echo "📂 Files in new isolated branch:"
+        echo "============================================"
+        if [ -z "$(ls -A)" ]; then
+            echo "⚠️  WARNING: No files copied! Check folder names."
+        else
+            # Show tree structure
+            find . -type f -not -path './.git/*' | sort | while read file; do
+                echo "   ✓ $file"
             done
-            
-            if [ "$keep_dir" = false ]; then
-                echo "   🗑️  Removing: $dir/"
-                git rm -rf "$dir" 2>/dev/null || true
-            fi
-        done
-        
-        # Explicitly remove .github folder if it exists
-        if [ -d ".github" ]; then
-            echo ""
-            echo "🗑️  Removing .github folder (workflows, etc.)..."
-            git rm -rf .github 2>/dev/null || true
         fi
-        
         echo ""
         echo "📊 Summary:"
-        echo "   • Total files in new branch: $kept_count"
-        echo ""
-        echo "✅ Branch filtering complete!"
-
-    # Show what's left
-    - name: Show remaining structure
-      run: |
-        echo ""
-        echo "📂 Remaining folder structure:"
-        echo "============================================"
-        ls -laR
+        file_count=$(find . -type f -not -path './.git/*' | wc -l)
+        echo "   • Total files: $file_count"
         echo ""
 
-    # Commit changes
-    - name: Commit changes
+    # Step 7: Create initial commit on orphan branch
+    # Why: Orphan branch needs at least one commit to exist
+    - name: Create initial isolated commit
       run: |
-        echo "💾 Committing changes to new branch..."
-        git status
+        echo "💾 Creating initial commit on isolated branch..."
+        echo ""
+        
+        # Add all files
+        git add .
+        
+        # Check if there are files to commit
         if git diff --cached --quiet; then
-          echo "⚠️  No changes to commit (all files were kept)"
+            echo "❌ ERROR: No files to commit!"
+            echo "Check that folder names match exactly (case-sensitive)"
+            exit 1
         else
-          git commit -m "Created filtered branch with only: ${{ github.event.inputs.folders_to_keep }}" || echo "No changes to commit"
+            # Create commit with clear message
+            git commit -m "Initial commit: Filtered branch - Folders: ${{ github.event.inputs.folders_to_keep }} | Source: ${{ github.event.inputs.source_branch }} | Type: ORPHAN (isolated) | Created: $(date -u +"%Y-%m-%d %H:%M:%S UTC")"
+            
+            echo "✅ Initial commit created"
         fi
 
-    # Push branch
-    - name: Push new filtered branch only
+    # Step 8: Push the isolated branch (Make branch available in remote repository)
+    - name: Push isolated branch to remote
       run: |
-        echo "🚀 Pushing ONLY the filtered branch: ${{ github.event.inputs.new_branch }}"
-        echo "ℹ️  Main branch will NOT be modified or pushed"
-        git push origin ${{ github.event.inputs.new_branch }} --force
+        echo "============================================"
+        echo "🚀 Pushing isolated branch to remote"
+        echo "============================================"
         echo ""
-        echo "✅ Successfully created filtered branch!"
-        echo "📋 Branch name: ${{ github.event.inputs.new_branch }}"
-        echo "📁 Contains only: ${{ github.event.inputs.folders_to_keep }}"
+        
+        # Force push to create/overwrite the branch
+        git push origin ${{ github.event.inputs.new_branch }} --force
+        
+        echo ""
+        echo "✅ SUCCESS!"
+        echo "============================================"
+        echo "📋 Branch Details:"
+        echo "   • Name: ${{ github.event.inputs.new_branch }}"
+        echo "   • Type: Orphan (isolated from all other branches)"
+        echo "   • Contains: ${{ github.event.inputs.folders_to_keep }}"
+        echo "   • Source: ${{ github.event.inputs.source_branch }}"
+        echo ""
+        echo "🔒 Branch Protection:"
+        echo "   • No shared history with main"
+        echo "   • Cannot create pull requests to main"
+        echo "   • Completely isolated branch"
+        echo ""
+        echo "⚠️  IMPORTANT:"
+        echo "   This branch is ISOLATED and cannot be merged back to main"
+        echo "   It exists as a separate line of development"
+        echo "============================================"
+
+    # Step 9: Create branch protection rule via GitHub API (optional but recommended)
+    # Why: Extra safety to prevent accidental merges
+    - name: Add branch protection (prevent merges to main)
+      continue-on-error: true  # Don't fail workflow if this step fails
+      run: |
+        echo ""
+        echo "🔒 Attempting to add branch protection..."
+        
+        # Note: This requires PAT with repo permissions
+        # You can also set this manually in GitHub Settings > Branches
+        
+        curl -X PUT \
+          -H "Authorization: token ${{ secrets.PAT_GITHUB }}" \
+          -H "Accept: application/vnd.github.v3+json" \
+          "https://api.github.com/repos/${{ github.repository }}/branches/${{ github.event.inputs.new_branch }}/protection" \
+          -d '{
+            "required_status_checks": null,
+            "enforce_admins": false,
+            "required_pull_request_reviews": null,
+            "restrictions": null,
+            "allow_force_pushes": true,
+            "allow_deletions": false
+          }' 2>/dev/null || echo "ℹ️  Could not set branch protection via API (this is optional)"
+        
+        echo ""
+        echo "ℹ️  For additional protection, manually configure in:"
+        echo "   Settings > Branches > Branch protection rules"
