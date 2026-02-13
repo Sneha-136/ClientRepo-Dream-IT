@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "DataPipeline",
+    "displayName": "onetime_Pipeline_Shopify"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "f27002b3-7d0d-ade1-4a01-7a31320586dd"
+  }
+}

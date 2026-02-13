@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "Notebook",
+    "displayName": "test_hubspot"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "981db9dc-24c2-aad0-4e49-08f33087f72e"
+  }
+}

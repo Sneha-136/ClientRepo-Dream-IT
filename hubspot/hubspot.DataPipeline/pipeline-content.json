@@ -1,0 +1,67 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "e3370862-c0e2-930b-4a60-5c24e2e3790c",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "input_config": {
+              "value": "{\n  \"sources\": {\n    \"contacts_all\": {\n      \"active_flag\": true,\n      \"fields_all\": true,\n      \"destination\": \"br_hs_contacts_all\"\n    },\n    \"contacts_limited\": {\n      \"active_flag\": true,\n      \"fields_all\": false,\n      \"fields\": \"firstname,lastname,email,motorbike_owner,do_you_have_at_least_a_m2_licence,cbt_or_motorcycle_licence_prior_to_purchase,licence_status,hs_analytics_source,where_the_customer_first_heard_of_us,hs_analytics_first_visit_timestamp,klaviyo_first_active,first_conversion_event_name,first_conversion_date,engagements_last_meeting_booked,date_of_birth,country,country_or_region,zip,city,createdate,test_ride___date_of_booking_creation,test_ride___booked_date,data___test_ride___attended,test_ride___location_name,test_ride___model_selected,test_ride___booked_type,test_ride___cancelled_date,do_you_want_one_,customer___purchase_intent___timeframe, hs_additional_emails,date_of_birth__dd_mm_yyyy_,year_of_birth,lifecyclestage\",\n      \"destination\": \"br_hs_contacts_limited\"\n    }\n  }\n}",
+              "type": "string"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Notebook1",
+        "dependsOn": []
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "ae655ffc-4c2e-416a-bbc1-eb396c6a9175",
+          "workspaceId": "473d7198-1f98-4a1e-bbcd-715b24c4259a",
+          "parameters": {
+            "CLIENT_SECRET": {
+              "value": "ee6e5bc8-35f5-45cb-8474-567874e9d7d6",
+              "type": "string"
+            },
+            "CLIENT_ID": {
+              "value": "ecc9ac61-ccbc-4974-be41-b587129ff708",
+              "type": "string"
+            },
+            "REFRESH_TOKEN": {
+              "value": "eu1-6105-5e5c-4bb3-bdf1-d802309feda0",
+              "type": "string"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Notebook2",
+        "state": "Inactive",
+        "onInactiveMarkAs": "Succeeded",
+        "dependsOn": [
+          {
+            "activity": "Notebook1",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "DataPipeline",
+    "displayName": "onetime_Pipeline_BusinessCentral"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "19164490-ef32-8dad-497e-8b50e550a7f6"
+  }
+}

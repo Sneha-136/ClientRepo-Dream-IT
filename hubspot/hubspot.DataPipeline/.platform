@@ -1,0 +1,11 @@
+{
+  "$schema": "https://developer.microsoft.com/json-schemas/fabric/gitIntegration/platformProperties/2.0.0/schema.json",
+  "metadata": {
+    "type": "DataPipeline",
+    "displayName": "hubspot"
+  },
+  "config": {
+    "version": "2.0",
+    "logicalId": "e79610a0-afe3-ad9d-4f16-7ee16bc1b530"
+  }
+}
