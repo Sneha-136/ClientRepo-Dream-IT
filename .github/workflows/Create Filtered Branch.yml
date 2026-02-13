@@ -50,25 +50,26 @@ jobs:
         echo "🌿 Creating branch: ${{ github.event.inputs.new_branch }}"
         git checkout -b ${{ github.event.inputs.new_branch }}
 
-    # Filter folders
+    # Filter folders - Keep only specified folders
     - name: Filter folders
       run: |
         echo "============================================"
-        echo "📂 Filtering Repository"
+        echo "📂 Creating Filtered Branch"
         echo "============================================"
         echo ""
-        echo "✅ Folders to KEEP: ${{ github.event.inputs.folders_to_keep }}"
+        echo "✅ Folders to include in new branch: ${{ github.event.inputs.folders_to_keep }}"
+        echo "ℹ️  Note: Main branch will NOT be modified - only the new branch"
         echo ""
         
         # Convert comma-separated list to array
         IFS=',' read -ra FOLDERS <<< "${{ github.event.inputs.folders_to_keep }}"
         
-        # Display folders that will be kept
-        echo "📁 The following folders (and their contents) will be kept:"
+        # Display folders that will be included
+        echo "📁 Checking specified folders:"
         for folder in "${FOLDERS[@]}"; do
             folder=$(echo "$folder" | xargs)
             if [ -d "$folder" ]; then
-                echo "   ✓ $folder/ (exists)"
+                echo "   ✓ $folder/ (found)"
             else
                 echo "   ✗ $folder/ (NOT FOUND - check spelling!)"
             fi
@@ -78,37 +79,38 @@ jobs:
         # Get all files in repository
         all_files=$(git ls-files)
         
-        # Counter for removed files
-        removed_count=0
+        # Counter for kept files
         kept_count=0
         
-        # Remove files not in specified folders
+        # List files that will be kept
+        echo "📄 Files being added to new branch:"
+        echo ""
         for file in $all_files; do
             keep_file=false
             
             # Check if file is in one of our folders to keep
             for folder in "${FOLDERS[@]}"; do
                 folder=$(echo "$folder" | xargs)
-                # Check if file starts with folder name
-                if [[ $file == "$folder"* ]]; then
+                # Check if file is INSIDE the folder (must start with folder/ not just folder)
+                if [[ $file == "$folder/"* ]]; then
                     keep_file=true
                     kept_count=$((kept_count + 1))
+                    echo "   ✓ $file"
                     break
                 fi
             done
             
-            # Remove file if not in keep list
+            # Remove file from new branch if not in keep list
             if [ "$keep_file" = false ]; then
                 git rm "$file" 2>/dev/null || true
-                removed_count=$((removed_count + 1))
             fi
         done
         
         echo ""
         echo "📊 Summary:"
-        echo "   • Files kept: $kept_count"
+        echo "   • Total files in new branch: $kept_count"
         echo ""
-        echo "✅ Filtering complete!"
+        echo "✅ Branch filtering complete!"
 
     # Show what's left
     - name: Show remaining structure
@@ -116,18 +118,18 @@ jobs:
         echo ""
         echo "📂 Remaining folder structure:"
         echo "============================================"
-        ls -la
+        ls -laR
         echo ""
 
     # Commit changes
     - name: Commit changes
       run: |
-        echo "💾 Committing changes..."
+        echo "💾 Committing changes to new branch..."
         git status
         if git diff --cached --quiet; then
           echo "⚠️  No changes to commit (all files were kept)"
         else
-          git commit -m "Filtered branch: Kept only folders - ${{ github.event.inputs.folders_to_keep }}" || echo "No changes to commit"
+          git commit -m "Created filtered branch with only: ${{ github.event.inputs.folders_to_keep }}" || echo "No changes to commit"
         fi
 
     # Push branch
