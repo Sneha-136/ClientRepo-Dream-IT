@@ -1,0 +1,124 @@
+{
+  "properties": {
+    "activities": [
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "4ce5c3c1-422b-975b-4e20-3caa19932d8d",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "input_config": {
+              "value": {
+                "value": "@string(pipeline().parameters.input_config)",
+                "type": "Expression"
+              },
+              "type": "string"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Notebook1",
+        "dependsOn": []
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "afe8b2e7-71c5-a071-4de7-9ab1a20d1991",
+          "workspaceId": "00000000-0000-0000-0000-000000000000",
+          "parameters": {
+            "TENANT_ID": {
+              "value": {
+                "value": "@string(pipeline().parameters.TENANT_ID)",
+                "type": "Expression"
+              },
+              "type": "string"
+            },
+            "CLIENT_ID": {
+              "value": {
+                "value": "@string(pipeline().parameters.CLIENT_ID)",
+                "type": "Expression"
+              },
+              "type": "string"
+            },
+            "CLIENT_SECRET": {
+              "value": {
+                "value": "@string(pipeline().parameters.CLIENT_SECRET)",
+                "type": "Expression"
+              },
+              "type": "string"
+            },
+            "ENVIRONMENT": {
+              "value": {
+                "value": "@string(pipeline().parameters.ENVIRONMENT)",
+                "type": "Expression"
+              },
+              "type": "string"
+            }
+          }
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Notebook2",
+        "dependsOn": [
+          {
+            "activity": "Notebook1",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      },
+      {
+        "type": "TridentNotebook",
+        "typeProperties": {
+          "notebookId": "9c50a888-3425-a308-43fa-77c2f9f55615",
+          "workspaceId": "00000000-0000-0000-0000-000000000000"
+        },
+        "policy": {
+          "timeout": "0.12:00:00",
+          "retry": 0,
+          "retryIntervalInSeconds": 30,
+          "secureInput": false,
+          "secureOutput": false
+        },
+        "name": "Notebook3",
+        "dependsOn": [
+          {
+            "activity": "Notebook2",
+            "dependencyConditions": [
+              "Succeeded"
+            ]
+          }
+        ]
+      }
+    ],
+    "parameters": {
+      "input_config": {
+        "type": "string"
+      },
+      "TENANT_ID": {
+        "type": "string"
+      },
+      "CLIENT_ID": {
+        "type": "string"
+      },
+      "CLIENT_SECRET": {
+        "type": "string"
+      },
+      "ENVIRONMENT": {
+        "type": "string"
+      }
+    }
+  }
+}
